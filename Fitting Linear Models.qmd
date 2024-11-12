@@ -1,0 +1,197 @@
+---
+title: "Fitting Linear Models"
+format: html
+editor: visual
+---
+
+## Data
+
+We will use a dataset from the UCI Machine Learning Repository. This data set is about bike sharing rentals and is available at the assignment link. You can learn more about the data here. The data is available at
+https://www4.stat.ncsu.edu/~online/datasets/SeoulBikeData.csv
+
+The data description describes the following variables:
+
+• Date : day/month/year
+
+• Rented Bike count - Count of bikes rented at each hour
+
+• Hour - Hour of the day
+
+• Temperature-Temperature in Celsius
+
+• Humidity - %
+
+• Windspeed - m/s
+
+• Visibility - 10m
+
+• Dew point temperature - Celsius
+
+• Solar radiation - MJ/m2
+
+• Rainfall - mm
+
+• Snowfall - cm
+
+• Seasons - Winter, Spring, Summer, Autumn
+
+• Holiday - Holiday/No holiday
+
+• Functional Day - NoFunc(Non Functional Hours), Fun(Functional hours)
+
+## Reading Data
+
+Before we can work with the data, we need to read it in!
+
+```{r, warning = FALSE}
+library(tidyverse)
+library(tidymodels)
+
+bike_data <- readr::read_csv("https://www4.stat.ncsu.edu/~online/datasets/SeoulBikeData.csv",
+                             locale=locale(encoding="latin1"))
+bike_data
+```
+
+## EDA
+
+**1. We first need to check for missingness in the data.**
+
+```{r}
+sum_na <- function(column){
+  sum(is.na(column))
+}
+
+na_counts <- bike_data |>
+  summarize(across(everything(), sum_na))
+na_counts
+```
+
+From this output, we see that our data is not missing any data and we can proceed ahead.
+
+**2. Check the column types and the values within the columns to make sure they make sense (basic summary stats for numeric columns and check the unique values for the categorical variables).**
+
+We first can examine the unique values for the categorical variables, and see that all of the unique values for the categorical variables make sense.
+
+```{r}
+str(bike_data)
+
+unique(bike_data$Seasons)
+unique(bike_data$Holiday)
+unique(bike_data$`Functioning Day`)
+head(unique(bike_data$Date)) #Here Date is in a character format
+```
+
+We can then examine the summary stats for our numeric variables.
+
+```{r}
+summary(bike_data[sapply(bike_data, is.numeric)])
+```
+
+From our investigation on the summaries of the numeric variables, most of them make sense. However, we may want to investigate the Snowfall and Rainfall variables further.
+
+**3. Convert the Date column into an actual date (if need be). Recall the lubridate package.**
+
+We noticed in our unique character values investigation that the Date variable is originally in the "DD/MM/YYYY" format and thus needs to be converted to a date variable with `lubridate::dmy()`.
+
+```{r}
+library(lubridate)
+
+bike_data$Date <- dmy(bike_data$Date)
+bike_data
+```
+
+**4. Turn the character variables (Seasons, Holiday, and Functioning Day) into factors.**
+
+We can then turn the character variables into factors with `as.factor()`.
+
+```{r}
+bike_data <- bike_data |>
+  mutate(Seasons = as.factor(Seasons),
+         Holiday = as.factor(Holiday),
+         `Functioning Day` = as.factor(`Functioning Day`))
+bike_data
+```
+
+**5. Lastly, rename the all the variables to have easy to use names (I use lower snake case but whatever you’d like is fine)**
+
+We notice that some variables have spaces and their units attached to them, so for ease of use we can rename them.
+
+```{r}
+bike_data <- bike_data |>
+  rename("date" = "Date",
+         "bike_count" = "Rented Bike Count",
+         "hour" = "Hour",
+         "temperature" = "Temperature(°C)",
+         "humidity" = "Humidity(%)",
+         "wind_speed" = "Wind speed (m/s)",
+         "visibility" = "Visibility (10m)",
+         "dew_point_temp" = "Dew point temperature(°C)",
+         "solar_radiation" = "Solar Radiation (MJ/m2)",
+         "rainfall" = "Rainfall(mm)" ,
+         "snowfall" = "Snowfall (cm)",
+         "seasons" = "Seasons",
+         "holiday" = "Holiday",
+         "functioning_day" = "Functioning Day")
+```
+
+**6. Create summary statistics (especially related to the bike rental count). These should be done across your categorical variables as well. You should notice something about the Functioning Day variable. Subset the data appropriately based on that.**
+
+We first want to create some summary statistics across our categorical variables.
+
+```{r}
+# For seasons
+bike_data |>
+  group_by(seasons) |>
+  summarize(across(bike_count, .fns = list("mean" = mean,
+                                                "median" = median,
+                                                "var" = var,
+                                                "sd" = sd,
+                                                "IQR" = IQR), .names = "{.fn}_{.col}"))
+```
+
+
+```{r}
+# For holiday
+bike_data |>
+  group_by(holiday) |>
+  summarize(across(bike_count, .fns = list("mean" = mean,
+                                                "median" = median,
+                                                "var" = var,
+                                                "sd" = sd,
+                                                "IQR" = IQR), .names = "{.fn}_{.col}"))
+```
+
+```{r}
+# For functioning day
+bike_data |>
+  group_by(functioning_day) |>
+  summarize(across(bike_count, .fns = list("mean" = mean,
+                                                "median" = median,
+                                                "var" = var,
+                                                "sd" = sd,
+                                                "IQR" = IQR), .names = "{.fn}_{.col}"))
+```
+
+Here we notice something strange with our Functioning Day categorical variable for the `No` level, all of the numerical summaries are zero across this level. So we can subset our data to only include Functioning Day where the level is `Yes`.
+
+```{r}
+bike_data <- bike_data |>
+  filter(functioning_day == "Yes")
+bike_data
+```
+
+**7. To simplify our analysis, we’ll summarize across the hours so that each day has one observation associated with it.**
+
+• (I’m using my new names here. Your names may not match and that’s ok!) Let’s group_by()
+the date, seasons, and holiday variables.
+
+• Find the sum of the bike_count, rainfall, and snowfall variables
+
+• Find the mean of all the weather related variables.
+
+• This will be our new data that we’ll analyze!
+
+We'll combine this into one data step.
+
+
+
