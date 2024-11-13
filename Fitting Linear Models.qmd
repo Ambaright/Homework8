@@ -146,7 +146,9 @@ bike_data |>
                                                 "median" = median,
                                                 "var" = var,
                                                 "sd" = sd,
-                                                "IQR" = IQR), .names = "{.fn}_{.col}"))
+                                                "IQR" = IQR,
+                                                "min" = min,
+                                                "max" = max), .names = "{.fn}_{.col}"))
 ```
 
 
@@ -158,7 +160,9 @@ bike_data |>
                                                 "median" = median,
                                                 "var" = var,
                                                 "sd" = sd,
-                                                "IQR" = IQR), .names = "{.fn}_{.col}"))
+                                                "IQR" = IQR,
+                                                "min" = min,
+                                                "max" = max), .names = "{.fn}_{.col}"))
 ```
 
 ```{r}
@@ -169,7 +173,9 @@ bike_data |>
                                                 "median" = median,
                                                 "var" = var,
                                                 "sd" = sd,
-                                                "IQR" = IQR), .names = "{.fn}_{.col}"))
+                                                "IQR" = IQR,
+                                                "min" = min,
+                                                "max" = max), .names = "{.fn}_{.col}"))
 ```
 
 Here we notice something strange with our Functioning Day categorical variable for the `No` level, all of the numerical summaries are zero across this level. So we can subset our data to only include Functioning Day where the level is `Yes`.
@@ -194,4 +200,77 @@ the date, seasons, and holiday variables.
 We'll combine this into one data step.
 
 
+```{r}
+library(dplyr)
+
+daily_data <- bike_data |>
+  group_by(date, seasons, holiday) |>
+  summarize("total_bike_count" = sum(bike_count),
+         "total_rainfall" = sum(rainfall),
+         "total_snowfall" = sum(snowfall),
+         "average_temp" = mean(temperature),
+         "average_humidity" = mean(humidity),
+         "average_wind_speed" = mean(wind_speed),
+         "average_visibility" = mean(visibility),
+         "average_dew_point_temp" = mean(dew_point_temp),
+         "average_solar_radiation" = mean(solar_radiation))
+daily_data
+```
+
+**8. Recreate your basic summary stats and then create some plots to explore relationships. Report correlation between your numeric variables as well.**
+
+We first need to recreate our basic summary stats.
+
+```{r}
+summary(daily_data)
+```
+
+We can then create some plots to explore the relationships in our daily data.
+
+We first can examine a scatterplot between the total bike count per day and the average temperture for that day.
+
+```{r}
+library(ggplot2)
+scatter <- ggplot(daily_data, aes(x = average_temp, y = total_bike_count)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Total Bike Count vs Average Temperature",
+       x = "Average Temperature (in Celsius)",
+       y = "Total Bike Count")
+scatter
+```
+
+We notice that there appears to be a positive relationship between total bike count and the average temperature, which is to be expected considering people would likely be more inclined to rent a bike to ride in warmer weather.
+
+We can also examine the box plots for total bike count based on the season.
+
+```{r}
+boxplot <- ggplot(daily_data, aes(x = seasons, y = total_bike_count, color = seasons)) +
+  geom_boxplot() +
+  labs(title = "Total Bike Count by Season",
+       x = "Season",
+       y = "Total Bike Count") +
+  scale_color_discrete("Season")
+boxplot
+```
+
+Again through this boxplot we see a similar trend as in our scatterplot, where less people rent a bike in the colder weather (i.e. winter season).
+
+We can also examine the correlation between our numeric variables in the form of a correlation matrix.
+
+```{r}
+library(corrplot)
+numeric_vars <- daily_data |>
+  select(total_bike_count:average_solar_radiation) |>
+  as.data.frame()
+
+numeric_vars <- numeric_vars |> select(-date, -seasons)
+
+# Calculate the correlation matrix
+cor_matrix <- cor(numeric_vars, use = "complete.obs")
+
+corrplot(cor_matrix, method = "number")
+```
+
+From our correlation plot we can confirm that there is a positive linear relationship between the total bike count and the average temperature.
 
