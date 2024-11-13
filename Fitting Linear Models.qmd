@@ -274,3 +274,148 @@ corrplot(cor_matrix, method = "number")
 
 From our correlation plot we can confirm that there is a positive linear relationship between the total bike count and the average temperature.
 
+## Split the Data
+
+**Use functions from tidymodels to split the data into a training and test set (75/25 split). Use the strata argument to stratify the split on the seasons variable**
+
+```{r}
+library(tidymodels)
+set.seed(123)
+daily_split <- initial_split(daily_data, prop = 0.75, strata = seasons)
+daily_train <- training(daily_split)
+daily_test <- testing(daily_split)
+```
+
+**On the training set, create a 10 fold CV split**
+
+```{r}
+set.seed(123)
+daily_10_fold <- vfold_cv(daily_train, 10)
+```
+
+
+## Fitting MLR
+
+First, let’s create some recipes.
+
+For the 1st recipe:
+
+• Let’s ignore the date variable for modeling (so we’ll need to remove that or give it a different ID) but use it to create a weekday/weekend (factor) variable. (See step 2 of the shinymodels tutorial! You can use step_date() then step_mutate() with a factor(if_else(...)) to create the variable. I then had to remove the intermediate variable created.)
+
+• Let’s standardize the numeric variables since their scales are pretty different.
+
+• Let’s create dummy variables for the seasons, holiday, and our new day type variable
+
+
+```{r}
+recipe_1 <- recipe(total_bike_count ~ ., data = daily_train) |>
+  update_role(date, new_role = "ID") |>
+  step_date(date, features = "dow", label = TRUE) |>
+  step_mutate(day_type = factor(if_else(date_dow %in% c(0,6), "Weekend", "Weekday"))) |>
+  step_rm(date_dow) |>
+  step_normalize(all_numeric(), -all_outcomes()) |>
+  step_dummy(seasons, holiday, day_type)
+```
+
+For the 2nd recipe:
+
+• Do the same steps as above.
+
+• Add in interactions between seasons and holiday, seasons and temp, temp and rainfall. For the seasons interactions, you can use starts_with() to create the proper interactions.
+
+```{r}
+recipe_2 <- recipe(total_bike_count ~ ., data = daily_train) |>
+  update_role(date, new_role = "ID") |>
+  step_date(date, features = "dow", label = TRUE) |>
+  step_mutate(day_type = factor(if_else(date_dow %in% c(0,6), "Weekend", "Weekday"))) |>
+  step_rm(date_dow) |>
+  step_normalize(all_numeric(), -all_outcomes()) |>
+  step_dummy(seasons, holiday, day_type) |>
+  step_interact(terms = ~ starts_with("season"):holiday) |>
+  step_interact(terms = ~ starts_with("season"):average_temp) |>
+  step_interact(terms = ~ average_temp:total_rainfall)
+```
+
+For the 3rd recipe:
+
+• Do the same as the 2nd recipe.
+
+• Add in quadratic terms for each numeric predictor
+
+```{r}
+recipe_3 <- recipe(total_bike_count ~ ., data = daily_train) |>
+  update_role(date, new_role = "ID") |>
+  step_date(date, features = "dow", label = TRUE) |>
+  step_mutate(day_type = factor(if_else(date_dow %in% c(0,6), "Weekend", "Weekday"))) |>
+  step_rm(date_dow) |>
+  step_normalize(all_numeric(), -all_outcomes()) |>
+  step_dummy(seasons, holiday, day_type) |>
+  step_interact(terms = ~ starts_with("season"):holiday) |>
+  step_interact(terms = ~ starts_with("season"):average_temp) |>
+  step_interact(terms = ~ average_temp:total_rainfall) |>
+  step_poly(all_numeric(), -all_outcomes(), degree = 2, prefix = "quad")
+```
+
+Now set up our linear model fit to use the “lm” engine.
+
+```{r}
+daily_model <- linear_reg() |>
+  set_engine("lm")
+```
+
+Fit the models using 10 fold CV via fit_resamples() and consider the training set CV error to choose a best model.
+
+```{r}
+daily_CV_fits_1 <- workflow() |>
+  add_recipe(recipe_1) |>
+  add_model(daily_model) |>
+  fit_resamples(daily_10_fold) 
+
+daily_CV_fits_1 |>
+  collect_metrics()
+```
+
+```{r}
+daily_CV_fits_2 <- workflow() |>
+  add_recipe(recipe_1) |>
+  add_model(daily_model) |>
+  fit_resamples(daily_10_fold)
+
+daily_CV_fits_2 |>
+  collect_metrics()
+```
+
+```{r}
+daily_CV_fits_3 <- workflow() |>
+  add_recipe(recipe_1) |>
+  add_model(daily_model) |>
+  fit_resamples(daily_10_fold)
+
+daily_CV_fits_3 |>
+  collect_metrics()
+```
+
+
+Using your ‘best’ model, fit the model to the entire training data set (use the last_fit() function).
+
+• Compute the RMSE metric on the test set.
+
+```{r}
+#Determine best model above based on lowest rmse
+best_model_fit <- daily_CV_fits_1 |>
+  last_fit(daily_split) |>
+  collect_metrics()
+```
+
+
+• Obtain the final model (fit on the entire training set) coefficient table using extract_fit_parsnip()
+and tidy().
+
+```{r}
+final_fit <- best_model_fit$.workflow[[1]]
+final_coefficients <- final_fit |>
+  extract_fit_parsnip() |>
+  tidy()
+final_coefficients
+```
+
