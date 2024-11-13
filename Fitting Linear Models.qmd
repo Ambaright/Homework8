@@ -309,10 +309,8 @@ For the 1st recipe:
 
 ```{r}
 recipe_1 <- recipe(total_bike_count ~ ., data = daily_train) |>
-  update_role(date, new_role = "ID") |>
-  step_date(date, features = "dow", label = TRUE) |>
-  step_mutate(day_type = factor(if_else(date_dow %in% c(0,6), "Weekend", "Weekday"))) |>
-  step_rm(date_dow) |>
+  step_mutate(day_type = factor(if_else(wday(date) %in% c(1,7), "Weekend", "Weekday"))) |>
+  step_rm(date) |>
   step_normalize(all_numeric(), -all_outcomes()) |>
   step_dummy(seasons, holiday, day_type)
 ```
@@ -325,15 +323,13 @@ For the 2nd recipe:
 
 ```{r}
 recipe_2 <- recipe(total_bike_count ~ ., data = daily_train) |>
-  update_role(date, new_role = "ID") |>
-  step_date(date, features = "dow", label = TRUE) |>
-  step_mutate(day_type = factor(if_else(date_dow %in% c(0,6), "Weekend", "Weekday"))) |>
-  step_rm(date_dow) |>
+  step_mutate(day_type = factor(if_else(wday(date) %in% c(1,7), "Weekend", "Weekday"))) |>
+  step_rm(date) |>
   step_normalize(all_numeric(), -all_outcomes()) |>
   step_dummy(seasons, holiday, day_type) |>
-  step_interact(terms = ~ starts_with("season"):holiday) |>
-  step_interact(terms = ~ starts_with("season"):average_temp) |>
-  step_interact(terms = ~ average_temp:total_rainfall)
+  step_interact(terms = ~ starts_with("seasons"):starts_with("holiday")) |>
+  step_interact(terms = ~ starts_with("seasons"):average_temp) |>
+  step_interact(terms = ~ average_temp:total_rainfall) 
 ```
 
 For the 3rd recipe:
@@ -344,16 +340,22 @@ For the 3rd recipe:
 
 ```{r}
 recipe_3 <- recipe(total_bike_count ~ ., data = daily_train) |>
-  update_role(date, new_role = "ID") |>
-  step_date(date, features = "dow", label = TRUE) |>
-  step_mutate(day_type = factor(if_else(date_dow %in% c(0,6), "Weekend", "Weekday"))) |>
-  step_rm(date_dow) |>
+  step_mutate(day_type = factor(if_else(wday(date) %in% c(1,7), "Weekend", "Weekday"))) |>
+  step_rm(date) |>
   step_normalize(all_numeric(), -all_outcomes()) |>
   step_dummy(seasons, holiday, day_type) |>
-  step_interact(terms = ~ starts_with("season"):holiday) |>
-  step_interact(terms = ~ starts_with("season"):average_temp) |>
+  step_interact(terms = ~ starts_with("seasons"):starts_with("holiday")) |>
+  step_interact(terms = ~ starts_with("seasons"):average_temp) |>
   step_interact(terms = ~ average_temp:total_rainfall) |>
-  step_poly(all_numeric(), -all_outcomes(), degree = 2, prefix = "quad")
+  step_poly(total_rainfall,
+            total_snowfall,
+            average_temp,
+            average_humidity,
+            average_wind_speed,
+            average_visibility,
+            average_dew_point_temp,
+            average_solar_radiation, 
+            degree = 2)
 ```
 
 Now set up our linear model fit to use the “lm” engine.
@@ -377,7 +379,7 @@ daily_CV_fits_1 |>
 
 ```{r}
 daily_CV_fits_2 <- workflow() |>
-  add_recipe(recipe_1) |>
+  add_recipe(recipe_2) |>
   add_model(daily_model) |>
   fit_resamples(daily_10_fold)
 
@@ -387,7 +389,7 @@ daily_CV_fits_2 |>
 
 ```{r}
 daily_CV_fits_3 <- workflow() |>
-  add_recipe(recipe_1) |>
+  add_recipe(recipe_3) |>
   add_model(daily_model) |>
   fit_resamples(daily_10_fold)
 
@@ -395,24 +397,31 @@ daily_CV_fits_3 |>
   collect_metrics()
 ```
 
+Now that we fit all three models, we can compare the CV error on the training set and see that our third model with the quadratic term has the lowest CV error.
 
-Using your ‘best’ model, fit the model to the entire training data set (use the last_fit() function).
+**Using your ‘best’ model, fit the model to the entire training data set (use the last_fit() function).**
 
 • Compute the RMSE metric on the test set.
 
 ```{r}
-#Determine best model above based on lowest rmse
-best_model_fit <- daily_CV_fits_1 |>
-  last_fit(daily_split) |>
+final_wf <- workflow() |>
+  add_recipe(recipe_3) |>
+  add_model(daily_model)
+  
+final_fit <- final_wf |>
+  last_fit(daily_split)
+
+final_fit_metrics <- final_fit |>
   collect_metrics()
+final_fit_metrics
 ```
 
+From using `last_fit()` we see that our RMSE on the test set is 2961.0537.
 
 • Obtain the final model (fit on the entire training set) coefficient table using extract_fit_parsnip()
 and tidy().
 
 ```{r}
-final_fit <- best_model_fit$.workflow[[1]]
 final_coefficients <- final_fit |>
   extract_fit_parsnip() |>
   tidy()
